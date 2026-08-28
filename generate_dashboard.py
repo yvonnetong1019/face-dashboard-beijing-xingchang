@@ -211,14 +211,28 @@ def render_html(data: dict) -> str:
 def load_rows(source_path: Path) -> list[dict[str, str]]:
     if source_path.suffix.lower() == ".json":
         payload = json.loads(source_path.read_text(encoding="utf-8"))
-        return [
-            {
-                "优化师名称": str(row.get("优化师名称", "") or "").strip(),
-                "归属日期": str(row.get("归属日期", "") or "").strip(),
-                "人脸识别状态": str(row.get("人脸识别状态", "") or "").strip(),
-            }
-            for row in payload.get("rows", [])
-        ]
+        rows = payload.get("rows", [])
+
+        # Dataset SQL 查询结果的列名可能是表达式/底层字段名，做一层兼容映射。
+        # 目标输出字段（供后续统一处理）：优化师名称、归属日期、人脸识别状态、服务商公司名称
+        def pick(row: dict, *candidates: str) -> str:
+            for key in candidates:
+                if key in row and row.get(key) is not None:
+                    return str(row.get(key) or "").strip()
+            return ""
+
+        normalized = []
+        for row in rows:
+            normalized.append(
+                {
+                    "优化师名称": pick(row, "优化师名称", "optimizer_user_name"),
+                    "归属日期": pick(row, "归属日期", "toDate(attribution_date)", "attribution_date"),
+                    "人脸识别状态": pick(row, "人脸识别状态", "auth_status"),
+                    "服务商公司名称": pick(row, "服务商公司名称", "agent_company_name") or PROVIDER,
+                }
+            )
+        return normalized
+
     return list(csv.DictReader(source_path.open("r", encoding="utf-8-sig", newline="")))
 
 
